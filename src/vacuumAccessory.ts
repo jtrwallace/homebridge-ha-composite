@@ -37,8 +37,13 @@ export class VacuumAccessory {
       .onGet(this.getOn.bind(this));
 
     // Create or retrieve the Battery service
-    this.batteryService = this.accessory.getService(this.platform.Service.BatteryService)
-      || this.accessory.addService(this.platform.Service.BatteryService);
+    // JW: In some versions of Homebridge the Service type definition does not expose a
+    // BatteryService property. Cast Service to any and index into it at runtime to
+    // retrieve the constructor. This avoids TypeScript errors while still using
+    // the correct service in Homebridge.
+    const batteryServiceConstructor = (this.platform.Service as any).BatteryService;
+    this.batteryService = this.accessory.getService(batteryServiceConstructor)
+      || this.accessory.addService(batteryServiceConstructor);
     this.batteryService.getCharacteristic(this.platform.Characteristic.BatteryLevel)
       .onGet(this.getBatteryLevel.bind(this));
   }
