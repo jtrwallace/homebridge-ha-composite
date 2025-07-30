@@ -51,6 +51,13 @@ export class HACompositePlatform implements DynamicPlatformPlugin {
     this.CustomServices = new EveHomeKitTypes(this.api).Services;
     this.CustomCharacteristics = new EveHomeKitTypes(this.api).Characteristics;
 
+    // JW: Initialise bridgeAccessories to an empty array here. While class field
+    // declarations should initialise this property, some versions of the TS
+    // compiler may not emit class fields as own properties. Explicitly
+    // initialising in the constructor ensures bridgeAccessories exists before
+    // discoverDevices() iterates over it.
+    this.bridgeAccessories = [];
+
     this.log.debug('Finished initializing platform:', this.config.name);
 
     // When this event is fired it means Homebridge has restored all cached accessories from disk.
@@ -91,9 +98,16 @@ export class HACompositePlatform implements DynamicPlatformPlugin {
     try {
       const { HttpClient } = hapController as any;
       this.httpClient = new HttpClient(id, address, port, pairingData);
-      const accessories: any[] = await this.httpClient.getAccessories();
-      this.bridgeAccessories = accessories;
-      this.log.info(`Retrieved ${accessories.length} accessories from bridge`);
+      const accessories: any = await this.httpClient.getAccessories();
+      if (Array.isArray(accessories)) {
+        // JW: ensure we have a valid array of accessories before assigning.
+        this.bridgeAccessories = accessories;
+        this.log.info(`Retrieved ${accessories.length} accessories from bridge`);
+      } else {
+        // JW: If the response is not an array, log a warning and set to empty array.
+        this.bridgeAccessories = [];
+        this.log.warn('Retrieved undefined accessories from bridge');
+      }
     } catch (error) {
       this.log.error('Failed to connect or list accessories:', error);
     }
