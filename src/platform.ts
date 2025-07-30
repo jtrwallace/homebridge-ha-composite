@@ -1,6 +1,7 @@
 import type { API, Characteristic, DynamicPlatformPlugin, Logging, PlatformAccessory, PlatformConfig, Service } from 'homebridge';
 
 import { ExamplePlatformAccessory } from './platformAccessory.js';
+import { VacuumAccessory } from './vacuumAccessory.js';
 // Import hap-controller as a CommonJS module and destructure the HttpClient class.
 import hapController from 'hap-controller';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
@@ -20,6 +21,12 @@ export class HACompositePlatform implements DynamicPlatformPlugin {
   // this is used to track restored cached accessories
   public readonly accessories: Map<string, PlatformAccessory> = new Map();
   public readonly discoveredCacheUUIDs: string[] = [];
+
+  /**
+   * JW: List of accessories returned from the HomeKit bridge. Populated in
+   * connectToBridge() and used during discovery to find devices.
+   */
+  private bridgeAccessories: any[] = [];
 
   /**
    * JW: Client used to communicate with the HomeKit bridge via hap-controller.
@@ -85,6 +92,7 @@ export class HACompositePlatform implements DynamicPlatformPlugin {
       const { HttpClient } = hapController as any;
       this.httpClient = new HttpClient(id, address, port, pairingData);
       const accessories: any[] = await this.httpClient.getAccessories();
+      this.bridgeAccessories = accessories;
       this.log.info(`Retrieved ${accessories.length} accessories from bridge`);
     } catch (error) {
       this.log.error('Failed to connect or list accessories:', error);
@@ -108,83 +116,87 @@ export class HACompositePlatform implements DynamicPlatformPlugin {
    * must not be registered again to prevent "duplicate UUID" errors.
    */
   discoverDevices() {
-    // EXAMPLE ONLY
-    // A real plugin you would discover accessories from the local network, cloud services
-    // or a user-defined array in the platform config.
-    const exampleDevices = [
-      {
-        exampleUniqueId: 'ABCD',
-        exampleDisplayName: 'Bedroom',
-      },
-      {
-        exampleUniqueId: 'EFGH',
-        exampleDisplayName: 'Kitchen',
-      },
-      {
-        // This is an example of a device which uses a Custom Service
-        exampleUniqueId: 'IJKL',
-        exampleDisplayName: 'Backyard',
-        CustomService: 'AirPressureSensor',
-      },
-    ];
-
-    // loop over the discovered devices and register each one if it has not already been registered
-    for (const device of exampleDevices) {
-      // generate a unique id for the accessory this should be generated from
-      // something globally unique, but constant, for example, the device serial
-      // number or MAC address
-      const uuid = this.api.hap.uuid.generate(device.exampleUniqueId);
-
-      // see if an accessory with the same uuid has already been registered and restored from
-      // the cached devices we stored in the `configureAccessory` method above
-      const existingAccessory = this.accessories.get(uuid);
-
-      if (existingAccessory) {
-        // the accessory already exists
-        this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
-
-        // if you need to update the accessory.context then you should run `api.updatePlatformAccessories`. e.g.:
-        // existingAccessory.context.device = device;
-        // this.api.updatePlatformAccessories([existingAccessory]);
-
-        // create the accessory handler for the restored accessory
-        // this is imported from `platformAccessory.ts`
-        new ExamplePlatformAccessory(this, existingAccessory);
-
-        // it is possible to remove platform accessories at any time using `api.unregisterPlatformAccessories`, e.g.:
-        // remove platform accessories when no longer present
-        // this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [existingAccessory]);
-        // this.log.info('Removing existing accessory from cache:', existingAccessory.displayName);
-      } else {
-        // the accessory does not yet exist, so we need to create it
-        this.log.info('Adding new accessory:', device.exampleDisplayName);
-
-        // create a new accessory
-        const accessory = new this.api.platformAccessory(device.exampleDisplayName, uuid);
-
-        // store a copy of the device object in the `accessory.context`
-        // the `context` property can be used to store any data about the accessory you may need
-        accessory.context.device = device;
-
-        // create the accessory handler for the newly create accessory
-        // this is imported from `platformAccessory.ts`
-        new ExamplePlatformAccessory(this, accessory);
-
-        // link the accessory to your platform
-        this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
-      }
-
-      // push into discoveredCacheUUIDs
-      this.discoveredCacheUUIDs.push(uuid);
+    // Discover and register a single vacuum accessory by inspecting the accessory list
+    // provided by the HomeKit bridge. We require the HTTP client and accessory list
+    // to be available from the connectToBridge() call.
+    if (!this.httpClient || this.bridgeAccessories.length === 0) {
+      this.log.warn('No HomeKit bridge connection or accessories available; skipping discovery');
+      return;
     }
 
-    // you can also deal with accessories from the cache which are no longer present by removing them from Homebridge
-    // for example, if your plugin logs into a cloud account to retrieve a device list, and a user has previously removed a device
-    // from this cloud account, then this device will no longer be present in the device list but will still be in the Homebridge cache
-    for (const [uuid, accessory] of this.accessories) {
-      if (!this.discoveredCacheUUIDs.includes(uuid)) {
-        this.log.info('Removing existing accessory from cache:', accessory.displayName);
-        this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+    // Helper to check if a service UUID ends with a given short type code (e.g. '49' for Switch)
+    const endsWithShort = (uuid: string, code: string) => uuid.endsWith(code) || uuid.endsWith(code.toUpperCase());
+
+    // Find the first accessory that has both a Switch service and a Battery service
+    let candidateAccessory: any | undefined;
+    for (const accessory of this.bridgeAccessories) {
+      const services = accessory.services || [];
+      const hasSwitch = services.some((svc: any) => endsWithShort(svc.type, '49'));
+      const hasBattery = services.some((svc: any) => endsWithShort(svc.type, '96'));
+      if (hasSwitch && hasBattery) {
+        candidateAccessory = accessory;
+        break;
+      }
+    }
+    if (!candidateAccessory) {
+      this.log.warn('No suitable vacuum accessory found on the bridge');
+      return;
+    }
+    const accessoryAid = candidateAccessory.aid;
+    // Extract characteristic instance identifiers for On and BatteryLevel
+    let onCharacteristic = undefined;
+    let batteryCharacteristic = undefined;
+    for (const svc of candidateAccessory.services) {
+      if (endsWithShort(svc.type, '49')) {
+        for (const ch of svc.characteristics) {
+          if (endsWithShort(ch.type, '25')) {
+            onCharacteristic = ch.iid;
+          }
+        }
+      } else if (endsWithShort(svc.type, '96')) {
+        for (const ch of svc.characteristics) {
+          // Battery level characteristic ends with '68'
+          if (endsWithShort(ch.type, '68')) {
+            batteryCharacteristic = ch.iid;
+          }
+        }
+      }
+    }
+    if (!onCharacteristic) {
+      this.log.warn('Could not locate On characteristic for vacuum accessory');
+    }
+    if (!batteryCharacteristic) {
+      this.log.warn('Could not locate BatteryLevel characteristic for vacuum accessory');
+    }
+    // Generate a UUID based on the accessory aid
+    const uuid = this.api.hap.uuid.generate(String(accessoryAid));
+    const existing = this.accessories.get(uuid);
+    const displayName = candidateAccessory.services[0]?.name || 'Robot Vacuum';
+    if (existing) {
+      this.log.info('Restoring existing vacuum accessory from cache:', existing.displayName);
+      // Update context with new identifiers
+      existing.context.accessoryAid = accessoryAid;
+      existing.context.onCharacteristic = onCharacteristic;
+      existing.context.batteryCharacteristic = batteryCharacteristic;
+      new VacuumAccessory(this, existing);
+      this.api.updatePlatformAccessories([existing]);
+    } else {
+      this.log.info('Adding new vacuum accessory:', displayName);
+      const accessory = new this.api.platformAccessory(displayName, uuid);
+      accessory.context.accessoryAid = accessoryAid;
+      accessory.context.onCharacteristic = onCharacteristic;
+      accessory.context.batteryCharacteristic = batteryCharacteristic;
+      new VacuumAccessory(this, accessory);
+      this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+      this.accessories.set(uuid, accessory);
+    }
+    this.discoveredCacheUUIDs.push(uuid);
+    // Remove cached accessories no longer present
+    for (const [id, acc] of this.accessories) {
+      if (!this.discoveredCacheUUIDs.includes(id)) {
+        this.log.info('Removing existing accessory from cache:', acc.displayName);
+        this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [acc]);
+        this.accessories.delete(id);
       }
     }
   }
