@@ -2,8 +2,7 @@
   "name": "homebridge-ha-composite",
   "displayName": "Homebridge HA Composite",
   "type": "module",
-  "version": "1.0.0",
-  "private": true,
+  "version": "0.1.0",
   "description": "Homebridge plugin that merges multiple Home Assistant Bridge accessories into a single HomeKit tile.",
   "author": "Joshua Wallace",
   "license": "Apache-2.0",
@@ -16,7 +15,10 @@
     "url": "https://github.com/jtrwallace/homebridge-ha-composite/issues"
   },
   "keywords": [
-    "homebridge-plugin"
+    "homebridge-plugin",
+    "homebridge-platform",
+    "home assistant",
+    "hap-controller"
   ],
   "main": "dist/index.js",
   "engines": {
