@@ -12,7 +12,9 @@
  * If no --pin is provided the script will only list discovered devices.
  */
 
-import { HapDiscovery, HapClient } from 'hap-controller';
+// Import the default export from hap-controller and then destructure the classes we need.
+import hapController from 'hap-controller';
+const { IPDiscovery, HttpClient } = hapController;
 
 /**
  * JW: Represents the parsed command line arguments supported by this script.
@@ -67,11 +69,12 @@ function parseCommandLineArguments(): CommandLineArguments {
 async function main(): Promise<void> {
   const commandLineArguments: CommandLineArguments = parseCommandLineArguments();
   // Create a discovery instance which listens for HomeKit accessories on the network
-  const discovery: HapDiscovery = new HapDiscovery();
+  // Create a discovery instance which listens for HomeKit accessories via IP
+  const discovery: any = new IPDiscovery();
   console.log('Starting discovery…');
   discovery.on('serviceUp', async (discoveredService: any) => {
     // Log every discovered service
-    console.log(`Discovered accessory: ${discoveredService.name} (${discoveredService.id}) at ${discoveredService.host}:${discoveredService.port}`);
+    console.log(`Discovered accessory: ${discoveredService.name} (${discoveredService.id}) at ${discoveredService.address}:${discoveredService.port}`);
     // If a target name is specified, check if this service matches
     if (commandLineArguments.targetName && discoveredService.name === commandLineArguments.targetName) {
       if (!commandLineArguments.pinCode) {
@@ -81,10 +84,10 @@ async function main(): Promise<void> {
       // Pair with the target device using the provided PIN code
       try {
         console.log(`Attempting to pair with ${discoveredService.name}…`);
-        const client: HapClient = new HapClient(discoveredService);
+        const client: any = new HttpClient(discoveredService.id, discoveredService.address, discoveredService.port);
         await client.pairSetup(commandLineArguments.pinCode);
         // Extract long‑term pairing data for persistent connections
-        const longTermPairingData: unknown = client.getLongTermPairingData();
+        const longTermPairingData: unknown = client.getLongTermData();
         console.log('Pairing complete. Save the following JSON to your Homebridge config:');
         console.log(JSON.stringify(longTermPairingData, null, 2));
       } catch (error) {
