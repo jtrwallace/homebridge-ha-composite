@@ -97,17 +97,20 @@ export class HACompositePlatform implements DynamicPlatformPlugin {
     this.log.debug('Connecting to HomeKit bridge', id, address, port);
     try {
       const { HttpClient } = hapController as any;
-      this.httpClient = new HttpClient(id, address, port, pairingData);
-      const accessories: any = await this.httpClient.getAccessories();
-      if (Array.isArray(accessories)) {
-        // JW: ensure we have a valid array of accessories before assigning.
-        this.bridgeAccessories = accessories;
-        this.log.info(`Retrieved ${accessories.length} accessories from bridge`);
+      // JW: Construct the HttpClient with an options object. Passing individual
+      // arguments is deprecated in hap-controller and results in undefined
+      // accessories from the bridge.
+      this.httpClient = new HttpClient({ id, address, port, pairingData });
+      // JW: Fetch accessories and verify that the response is an array before assigning.
+      const accessoriesRaw: unknown = await this.httpClient.getAccessories();
+      let accessoriesList: any[] = [];
+      if (Array.isArray(accessoriesRaw)) {
+        accessoriesList = accessoriesRaw;
+        this.log.info(`Retrieved ${accessoriesList.length} accessories from bridge`);
       } else {
-        // JW: If the response is not an array, log a warning and set to empty array.
-        this.bridgeAccessories = [];
-        this.log.warn('Retrieved undefined accessories from bridge');
+        this.log.warn(`Expected array from bridge.getAccessories(), got ${typeof accessoriesRaw}; using empty list`);
       }
+      this.bridgeAccessories = accessoriesList;
     } catch (error) {
       this.log.error('Failed to connect or list accessories:', error);
     }
