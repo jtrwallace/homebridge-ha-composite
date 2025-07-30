@@ -100,7 +100,8 @@ export class HACompositePlatform implements DynamicPlatformPlugin {
       // JW: Construct the HttpClient with an options object. Passing individual
       // arguments is deprecated in hap-controller and results in undefined
       // accessories from the bridge.
-      this.httpClient = new HttpClient({ id, address, port, pairingData });
+      // JW: Construct the HttpClient using positional parameters (id, address, port, pairingData).
+      this.httpClient = new HttpClient(id, address, port, pairingData);
       // JW: Fetch accessories and verify that the response is an array before assigning.
       const accessoriesRaw: unknown = await this.httpClient.getAccessories();
       let accessoriesList: any[] = [];
