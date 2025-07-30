@@ -11,6 +11,44 @@
         "type": "string",
         "required": true,
         "default": "Homebridge HA Composite"
+      },
+      "controller": {
+        "title": "Controller",
+        "type": "object",
+        "required": false,
+        "properties": {
+          "id": {
+            "title": "Accessory ID",
+            "type": "string",
+            "required": true,
+            "description": "The unique identifier (MAC-like) of the HomeKit bridge accessory."
+          },
+          "address": {
+            "title": "IP Address",
+            "type": "string",
+            "required": true,
+            "description": "The IP address of the HomeKit bridge."
+          },
+          "port": {
+            "title": "Port",
+            "type": "integer",
+            "required": true,
+            "description": "The TCP port exposed by the HomeKit bridge."
+          },
+          "pairingData": {
+            "title": "Pairing Data",
+            "type": "object",
+            "required": true,
+            "description": "Long‑term pairing data obtained from the discovery script.",
+            "properties": {
+              "AccessoryPairingID": { "type": "string", "title": "Accessory Pairing ID" },
+              "AccessoryLTPK": { "type": "string", "title": "Accessory LTPK" },
+              "iOSDevicePairingID": { "type": "string", "title": "Controller Pairing ID" },
+              "iOSDeviceLTSK": { "type": "string", "title": "Controller LTSK" },
+              "iOSDeviceLTPK": { "type": "string", "title": "Controller LTPK" }
+            }
+          }
+        }
       }
     }
   }

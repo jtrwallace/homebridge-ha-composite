@@ -1,6 +1,8 @@
 import type { API, Characteristic, DynamicPlatformPlugin, Logging, PlatformAccessory, PlatformConfig, Service } from 'homebridge';
 
 import { ExamplePlatformAccessory } from './platformAccessory.js';
+// Import hap-controller as a CommonJS module and destructure the HttpClient class.
+import hapController from 'hap-controller';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
 
 // This is only required when using Custom Services and Characteristics not support by HomeKit
@@ -11,13 +13,18 @@ import { EveHomeKitTypes } from 'homebridge-lib/EveHomeKitTypes';
  * This class is the main constructor for your plugin, this is where you should
  * parse the user config and discover/register accessories with Homebridge.
  */
-export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
+export class HACompositePlatform implements DynamicPlatformPlugin {
   public readonly Service: typeof Service;
   public readonly Characteristic: typeof Characteristic;
 
   // this is used to track restored cached accessories
   public readonly accessories: Map<string, PlatformAccessory> = new Map();
   public readonly discoveredCacheUUIDs: string[] = [];
+
+  /**
+   * JW: Client used to communicate with the HomeKit bridge via hap-controller.
+   */
+  private httpClient: any | undefined;
 
   // This is only required when using Custom Services and Characteristics not support by HomeKit
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -45,9 +52,43 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
     // to start discovery of new accessories.
     this.api.on('didFinishLaunching', () => {
       log.debug('Executed didFinishLaunching callback');
-      // run the method to discover / register your devices as accessories
-      this.discoverDevices();
+      // Attempt to connect to the HomeKit bridge using configuration details
+      this.connectToBridge().then(() => {
+        // once connected (or attempted), begin discovery of devices
+        this.discoverDevices();
+      }).catch((error: unknown) => {
+        this.log.error('Error while connecting to HomeKit bridge:', error);
+        this.discoverDevices();
+      });
     });
+  }
+
+  /**
+   * JW: Connect to the configured HomeKit bridge using hap-controller. Reads
+   * controller configuration from the platform config (id, address, port, pairingData)
+   * and constructs an HttpClient. If configuration is missing or invalid, logs
+   * a warning and returns without throwing.
+   */
+  private async connectToBridge(): Promise<void> {
+    const controllerConfig = this.config.controller as any;
+    if (!controllerConfig) {
+      this.log.warn('No controller configuration found for Home Assistant bridge.');
+      return;
+    }
+    const { id, address, port, pairingData } = controllerConfig;
+    if (!id || !address || !port || !pairingData) {
+      this.log.warn('Incomplete controller configuration. Please specify id, address, port and pairingData.');
+      return;
+    }
+    this.log.debug('Connecting to HomeKit bridge', id, address, port);
+    try {
+      const { HttpClient } = hapController as any;
+      this.httpClient = new HttpClient(id, address, port, pairingData);
+      const accessories: any[] = await this.httpClient.getAccessories();
+      this.log.info(`Retrieved ${accessories.length} accessories from bridge`);
+    } catch (error) {
+      this.log.error('Failed to connect or list accessories:', error);
+    }
   }
 
   /**
