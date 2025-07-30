@@ -79,7 +79,7 @@ export class VacuumAccessory {
    * JW: Return the last known On state. A future enhancement could fetch
    * the current state from the remote accessory via getCharacteristics().
    */
-  async getOn(): Promise<CharacteristicValue> {
+  async getOn(): Promise<boolean> {
     return this.lastOnState;
   }
 
@@ -88,7 +88,7 @@ export class VacuumAccessory {
    * the BatteryLevel characteristic using hap-controller. If the HTTP client
    * or characteristic identifiers are unavailable, returns the cached value.
    */
-  async getBatteryLevel(): Promise<CharacteristicValue> {
+  async getBatteryLevel(): Promise<number> {
     try {
       const { accessoryAid, batteryCharacteristic } = this.accessory.context as any;
       if (!accessoryAid || !batteryCharacteristic) {
